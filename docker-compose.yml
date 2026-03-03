@@ -1,0 +1,98 @@
+#
+# 실행:
+#   docker compose -f docker/docker-compose.yml up -d
+#
+# 중지:
+#   docker compose -f docker/docker-compose.yml down
+#
+# Spark UI 접속:
+#   http://localhost:8080  (master 상태 확인)
+#   http://localhost:4040  (실행 중인 job 확인, 앱 실행 시 활성화)
+
+services:
+
+  # Spark Master
+  spark-master:
+    image: apache/spark:3.5.1-python3
+    container_name: spark-master
+
+    environment:
+      - SPARK_MODE=master # master 모드: worker들을 관리하고 작업을 분배하는 역할
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no  # 노드 간 인증 비활성화 
+      - SPARK_RPC_ENCRYPTION_ENABLED=no # 인증/암호화 비활성화
+      - SPARK_MASTER_WEBUI_PORT=8080 # Spark Web UI 포트 (클러스터 상태 모니터링)
+
+    ports:
+      - "8080:8080"   # Spark Master Web UI
+      - "7077:7077"   # Worker가 Master에 연결하는 포트
+
+    volumes:
+      - ../data:/opt/bitnami/spark/data # 로컬 data/ 폴더를 컨테이너 안에 마운트
+      # 임시 로컬 스토리지 (추후 데이터 공유 한계로 GCS 전환 예정)
+
+    networks:
+      - spark-network
+
+  # Spark Worker 1
+  spark-worker-1:
+    image: apache/spark:3.5.1-python3
+    container_name: spark-worker-1
+
+    environment:
+      - SPARK_MODE=worker # worker 모드: master로부터 task를 받아 실제 처리
+
+      - SPARK_MASTER_URL=spark://spark-master:7077 # 어느 master에 연결할지 지정
+
+      - SPARK_WORKER_MEMORY=2G # worker 1대에 할당할 메모리
+      # OOM 튜닝 
+
+      - SPARK_WORKER_CORES=2 # worker 1대에 할당할 CPU 코어 수
+
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+
+    ports:
+      - "8081:8081"   # Worker 1 Web UI
+
+    volumes:
+      - ../data:/opt/bitnami/spark/data
+      # 로컬 데이터 마운트 (분산 환경 데이터 공유 한계 확인 및 GCS 전환 예정)
+
+    depends_on:
+      - spark-master
+      # master가 먼저 뜬 후 worker 시작
+
+    networks:
+      - spark-network  
+
+  # Spark Worker 2
+  spark-worker-2:
+    image: apache/spark:3.5.1-python3
+    container_name: spark-worker-2
+
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G # worker 1과 동일하게 2G 설정
+      # master 1대 + worker 2대 = 총 4G 메모리
+
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+
+    ports:
+      - "8082:8081"   # Worker 2 Web UI (포트 충돌 방지로 8082 사용)
+
+    volumes:
+      - ../data:/opt/bitnami/spark/data
+
+    depends_on:
+      - spark-master
+
+    networks:
+      - spark-network
+
+# 네트워크
+networks:
+  spark-network:
+    driver: bridge # master와 worker가 서로 통신할 수 있는 내부 네트워크

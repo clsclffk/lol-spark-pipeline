@@ -1,0 +1,6 @@
+httpx==0.27.0  # 비동기 HTTP 요청 
+python-dotenv==1.0.1  # .env 파일 읽기
+pandas
+pyarrow
+psutil
+pyspark==3.5.0
